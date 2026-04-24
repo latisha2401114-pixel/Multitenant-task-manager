@@ -1,0 +1,130 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users           User[]
+  workflows       Workflow[]
+  workflowStages  WorkflowStage[]
+  tasks           Task[]
+}
+model User {
+  id           String   @id @default(uuid())
+  tenantId     String
+  email        String
+  passwordHash String
+  firstName    String?
+  lastName     String?
+  role         Role     @default(MEMBER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tasks        Task[]
+
+  @@unique([tenantId, email]) // Email unique per tenant
+  @@index([tenantId])
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+model Workflow {
+  id          String   @id @default(uuid())
+  tenantId    String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  stages      WorkflowStage[]
+
+  @@index([tenantId])
+}
+
+model WorkflowStage {
+  id         String   @id @default(uuid())
+  tenantId   String
+  workflowId String
+  name       String
+  orderIndex Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  tasks      Task[]
+
+  @@index([tenantId])
+  @@index([workflowId])
+}
+
+model Task {
+  id               String   @id @default(uuid())
+  tenantId         String
+  workflowStageId  String?
+  title            String
+  description      String?
+  priority         Priority @default(MEDIUM)
+  status           TaskStatus @default(OPEN)
+  version          Int      @default(1)
+  isDeleted        Boolean  @default(false)
+  deadline         DateTime?
+  assignedToId     String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tenant           Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workflowStage    WorkflowStage? @relation(fields: [workflowStageId], references: [id], onDelete: SetNull)
+  assignedTo       User?          @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+  
+  dependencies     TaskDependency[] @relation("DependentTasks")
+  dependents       TaskDependency[] @relation("DependencyTasks")
+
+  @@index([tenantId])
+  @@index([workflowStageId])
+  @@index([assignedToId])
+  @@index([status])
+}
+
+model TaskDependency {
+  id             String   @id @default(uuid())
+  tenantId       String
+  dependentId    String   // Task that is waiting
+  dependencyId   String   // Task that must be finished first
+  createdAt      DateTime @default(now())
+
+  dependentTask  Task     @relation("DependentTasks", fields: [dependentId], references: [id], onDelete: Cascade)
+  dependencyTask Task     @relation("DependencyTasks", fields: [dependencyId], references: [id], onDelete: Cascade)
+
+  @@unique([dependentId, dependencyId])
+  @@index([tenantId])
+  @@index([dependentId])
+  @@index([dependencyId])
+}
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  BLOCKED
+  COMPLETED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
